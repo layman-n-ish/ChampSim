@@ -1,0 +1,60 @@
+/*
+* Two-level adaptive branch predictor by Yeh and Patt (1991)
+*
+* Author: Nishant Malpani
+* Contact: Nishant.Malpani@iiitb.org
+*
+* References: 
+*   [1] https://dl.acm.org/doi/10.1145/123465.123475 
+*   [2] http://web.engr.oregonstate.edu/~benl/Projects/branch_pred/
+*
+*/
+
+#include "ooo_cpu.h"
+
+#define INDEX_BITS 14 /* #lower bits to be considered as index to the table of correlation registers */ 
+#define ORDER 16384
+#define CORRELATION_BITS 10 /* length of the history stored in correlation registers */
+#define GPT_SIZE 1024
+
+#define MAX_COUNTER 3 /* corresponds to 'Strongly Taken' decision */
+
+uint32_t corr_regs[NUM_CPUS][ORDER];
+uint8_t gpt[NUM_CPUS][GPT_SIZE];
+
+void O3_CPU::initialize_branch_predictor()
+{
+    cout << "CPU " << cpu << " Two-level adaptive branch predictor" << endl;
+
+    for(int i = 0; i < ORDER; i++)
+        corr_regs[cpu][i] = 0;
+
+    for(int i = 0; i < GPT_SIZE; i++)
+        gpt[cpu][i] = 0;
+}
+
+uint8_t O3_CPU::predict_branch(uint64_t ip)
+{
+    uint32_t cr_addr = ip & ((1 << INDEX_BITS) - 1); /* extract the lower INDEX_BITS */
+    
+    // cout << "ip: " << hex << ip << ", cr_addr: " << hex << cr_addr << endl;
+
+    uint32_t branch_history = corr_regs[cpu][cr_addr];
+    branch_history &= ((1 << CORRELATION_BITS) - 1); /* extract the recent branch history of length CORRELATION_BITS */
+
+    uint8_t prediction = (gpt[cpu][branch_history] >= ((MAX_COUNTER + 1)/2)) ? 1 : 0;
+    return prediction;
+}
+
+void O3_CPU::last_branch_result(uint64_t ip, uint8_t taken)
+{
+    uint32_t cr_addr = ip & ((1 << INDEX_BITS) - 1);
+    uint32_t upd_branch_history = (corr_regs[cpu][cr_addr] << 1) + taken; /* add the most recent branch history to LSB */
+    corr_regs[cpu][cr_addr] = upd_branch_history;
+    upd_branch_history &= ((1 << CORRELATION_BITS) - 1);
+
+    if (taken && (gpt[cpu][upd_branch_history] < MAX_COUNTER))
+        gpt[cpu][upd_branch_history]++;
+    else if ((!taken) && (gpt[cpu][upd_branch_history] > 0))
+        gpt[cpu][upd_branch_history]--;
+}
