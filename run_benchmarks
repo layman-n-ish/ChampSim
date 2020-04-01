@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+FLAG="${1}"
+
+N_SIM_STEPS=10
+BPRED_DIR="./branch"
+BIN_DIR="./bin"
+TRACE_DIR="./dpc3_traces"
+RESULTS_DIR="./results_${N_SIM_STEPS}M"
+
+if [ "$FLAG" = "m" ] ; then
+	bpred="two-level-adaptive"
+	echo "building your $bpred as the branch predictor..."
+	./build_champsim.sh "$bpred" no no no no lru 1
+
+	for trace_path in "$TRACE_DIR"/*
+        do
+		entry="two-level-adaptive-no-no-no-no-lru-1core"
+		trace=$(echo $trace_path | cut -f3 -d/)
+		echo "running your bin $entry with trace $trace..."
+		./run_champsim.sh $entry 1 $N_SIM_STEPS $trace
+	done	
+	FLAG="r"
+fi
+
+if [ "$FLAG" = "b" ] ; then
+	for bpred_path in "$BPRED_DIR"/*.bpred
+	do
+		bpred=$(echo $bpred_path | cut -f3 -d/ | cut -f1 -d.)	
+		echo "building with $bpred as the branch predictor..."
+		./build_champsim.sh "$bpred" no no no no lru 1
+	done
+fi
+
+if [ "$FLAG" = "e" ] ; then
+	for entry_path in "$BIN_DIR"/*
+	do
+		for trace_path in "$TRACE_DIR"/*
+		do
+			entry=$(echo $entry_path | cut -f3 -d/)
+			trace=$(echo $trace_path | cut -f3 -d/)
+			echo "running bin $entry with trace $trace..."
+			./run_champsim.sh $entry 1 $N_SIM_STEPS $trace
+		done
+	done
+fi
+
+if [ "$FLAG" = "r" ] ; then	
+	for result in "$RESULTS_DIR"/*
+	do
+		acc=$(sed -n '/Accuracy/p' $result | awk '{print $6}')
+		awk -v result=$result -v acc=$acc 'BEGIN { printf "%-85s -> Accuracy: %-10s\n", result, acc}'
+	done
+fi
