@@ -19,18 +19,18 @@
 
 #define MAX_COUNTER 3 /* corresponds to 'Strongly Taken' decision */
 
-uint32_t corr_regs[NUM_CPUS][ORDER];
-uint8_t gpt[NUM_CPUS][GPT_SIZE];
+uint32_t bht[NUM_CPUS][ORDER]; /* Branch History Table */
+uint8_t pht[NUM_CPUS][PHT_SIZE]; /* Pattern History Table */
 
 void O3_CPU::initialize_branch_predictor()
 {
-    cout << "CPU " << cpu << " Two-level adaptive branch predictor" << endl;
+    cout << "CPU " << cpu << " Per-address Two-Level Adaptive Branch Prediction using a global pattern history table (PAg)" << endl;
 
     for(int i = 0; i < ORDER; i++)
-        corr_regs[cpu][i] = 0;
+        bht[cpu][i] = 0;
 
-    for(int i = 0; i < GPT_SIZE; i++)
-        gpt[cpu][i] = 0;
+    for(int i = 0; i < PHT_SIZE; i++)
+        pht[cpu][i] = 0;
 }
 
 uint8_t O3_CPU::predict_branch(uint64_t ip)
@@ -39,22 +39,25 @@ uint8_t O3_CPU::predict_branch(uint64_t ip)
     
     // cout << "ip: " << hex << ip << ", cr_addr: " << hex << cr_addr << endl;
 
-    uint32_t branch_history = corr_regs[cpu][cr_addr];
-    branch_history &= ((1 << CORRELATION_BITS) - 1); /* extract the recent branch history of length CORRELATION_BITS */
+    uint32_t branch_history = bht[cpu][cr_addr];
+    branch_history &= ((1 << HISTORY_BITS) - 1); /* extract the recent branch history of length HISTORY_BITS */
 
-    uint8_t prediction = (gpt[cpu][branch_history] >= ((MAX_COUNTER + 1)/2)) ? 1 : 0;
+    uint8_t prediction = (pht[cpu][branch_history] >= ((MAX_COUNTER + 1)/2)) ? 1 : 0; /* prediction decision function */
     return prediction;
 }
 
 void O3_CPU::last_branch_result(uint64_t ip, uint8_t taken)
 {
     uint32_t cr_addr = ip & ((1 << INDEX_BITS) - 1);
-    uint32_t upd_branch_history = (corr_regs[cpu][cr_addr] << 1) + taken; /* add the most recent branch history to LSB */
-    corr_regs[cpu][cr_addr] = upd_branch_history;
-    upd_branch_history &= ((1 << CORRELATION_BITS) - 1);
 
-    if (taken && (gpt[cpu][upd_branch_history] < MAX_COUNTER))
-        gpt[cpu][upd_branch_history]++;
-    else if ((!taken) && (gpt[cpu][upd_branch_history] > 0))
-        gpt[cpu][upd_branch_history]--;
+    /* Updating BHT */
+    uint32_t upd_branch_history = (bht[cpu][cr_addr] << 1) + taken; /* add the most recent branch history to LSB */
+    bht[cpu][cr_addr] = upd_branch_history;
+    
+    /* Updating PHT using A2 saturating up-down counter */
+    upd_branch_history &= ((1 << HISTORY_BITS) - 1);
+    if (taken && (pht[cpu][upd_branch_history] < MAX_COUNTER))
+        pht[cpu][upd_branch_history]++;
+    else if ((!taken) && (pht[cpu][upd_branch_history] > 0))
+        pht[cpu][upd_branch_history]--;
 }
